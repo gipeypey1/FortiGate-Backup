@@ -1,0 +1,18 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Sensitive Credentials
+config/.env
+.env
+
+# Local backup cache
+backups/
+

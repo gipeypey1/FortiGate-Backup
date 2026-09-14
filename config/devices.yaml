@@ -1,0 +1,63 @@
+# ==============================================================================
+# Fortinet Inventory Configuration (HA Dedicated Management IPs)
+# ==============================================================================
+devices:
+  # ----------------------------------------------------------------------------
+  # FortiGate HA Pair (Node 1 & Node 2 via Dedicated Mgmt IP)
+  # ----------------------------------------------------------------------------
+  - name: "FGT-CORE-01"
+    description: "FortiGate Core Firewall - Primary Node"
+    type: "fortigate"
+    host: "192.168.2.1"
+    port: 443
+    token_env: "FGT_NODE1_TOKEN"
+    min_size_bytes: 40000      # Proteksi Gotcha #1: Baseline minimal (40 KB)
+    min_lines: 500             # Baseline baris minimal
+    verify_ssl: false
+    timeout_seconds: 30
+
+  # - name: "FGT-CORE-02"
+  #   description: "FortiGate Core Firewall - Secondary Node"
+  #   type: "fortigate"
+  #   host: "192.168.1.11"
+  #   port: 443
+  #   token_env: "FGT_NODE2_TOKEN"
+  #   min_size_bytes: 40000
+  #   min_lines: 500
+  #   verify_ssl: false
+  #   timeout_seconds: 30
+
+  # ----------------------------------------------------------------------------
+  # FortiWeb HA Pair (Node 1 & Node 2 via Dedicated Mgmt IP)
+  # Catatan: FortiWeb menggunakan autentikasi Base64 JSON.
+  # Anda bisa mengisi user_env & pass_env (script akan otomatis encode ke Base64)
+  # ATAU mengisi token_env jika sudah memiliki string Base64 siap pakai.
+  # ----------------------------------------------------------------------------
+  - name: "FWB-WAF-01"
+    description: "FortiWeb WAF - Node 1"
+    type: "fortiweb"
+    host: "192.168.2.2"
+    port: 443
+    user_env: "FWB_NODE1_USER"
+    pass_env: "FWB_NODE1_PASS"
+    vdom: "root"
+    token_env: "FWB_NODE1_TOKEN"
+    min_size_bytes: 25000      # Baseline minimal FortiWeb
+    min_lines: 300
+    verify_ssl: false
+    timeout_seconds: 30
+
+  # - name: "FWB-WAF-02"
+  #   description: "FortiWeb WAF - Node 2"
+  #   type: "fortiweb"
+  #   host: "192.168.1.21"
+  #   port: 443
+  #   user_env: "FWB_NODE2_USER"
+  #   pass_env: "FWB_NODE2_PASS"
+  #   vdom: "root"
+  #   token_env: "FWB_NODE2_TOKEN"
+  #   min_size_bytes: 25000
+  #   min_lines: 300
+  #   verify_ssl: false
+  #   timeout_seconds: 30
+
