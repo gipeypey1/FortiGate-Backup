@@ -289,20 +289,3 @@ FortiGate Backup/
 ├── requirements.txt
 └── README.md
 ```
-
----
-
-## 8. Penjadwalan Otomatis (Scheduling)
-
-### Windows Task Scheduler
-1. Buka **Task Scheduler** di Windows Server.
-2. Buat **Basic Task**, atur trigger harian atau tiap beberapa jam.
-3. Pada tab **Action**:
-   * **Program/script**: `python.exe` (atau path lengkap `C:\Python314\python.exe`)
-   * **Add arguments**: `main.py`
-   * **Start in**: `D:\Fortinet\FortiGate Backup`
-
-### Linux Cron (jika di-deploy di Linux)
-```cron
-0 */6 * * * cd /path/to/FortiGate\ Backup && /usr/bin/python3 main.py >> /var/log/fortinet_backup.log 2>&1
-```
