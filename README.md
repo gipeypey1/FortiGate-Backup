@@ -200,10 +200,13 @@ S3_VERIFY_SSL=false
 
 # FortiGate Tokens
 FGT_NODE1_TOKEN=token_api_fortigate_node1
+FGT_NODE2_TOKEN=token_api_fortigate_node1
 
 # FortiWeb Credentials (otomatis di-encode ke Base64)
 FWB_NODE1_USER=admin
 FWB_NODE1_PASS=password_admin_fortiweb
+FWB_NODE2_USER=admin
+FWB_NODE2_PASS=password_admin_fortiweb
 
 # SMTP Configuration
 SMTP_HOST=192.168.3.10
@@ -286,6 +289,114 @@ FortiGate Backup/
 │
 ├── backup_audit.log       # Log audit format JSON per eksekusi
 ├── main.py
+├── lambda_function.py     # Entrypoint serverless AWS Lambda
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## 8. Penjadwalan Otomatis On-Premise / VM
+
+### Windows Task Scheduler
+1. Buka **Task Scheduler** di Windows Server.
+2. Buat **Basic Task**, atur trigger harian atau tiap beberapa jam.
+3. Pada tab **Action**:
+   * **Program/script**: `python.exe`
+   * **Add arguments**: `main.py`
+   * **Start in**: `D:\Fortinet\FortiGate Backup`
+
+### Linux Cron (jika di-deploy di Linux VM)
+```cron
+0 */6 * * * cd /opt/fortinet-backup && /usr/bin/python3 main.py >> /var/log/fortinet_backup.log 2>&1
+```
+
+---
+
+## 9. Panduan Deployment ke AWS Lambda (Zero-Credentials & IAM Role)
+
+Ketika tool ini di-deploy ke **AWS Lambda**, Anda tidak perlu menyimpan `S3_ACCESS_KEY` atau `S3_SECRET_KEY` sama sekali. Lambda akan menggunakan **IAM Execution Role** bawaan dan kredensial perangkat dapat diambil otomatis dari **AWS Secrets Manager**.
+
+### A. Konfigurasi IAM Execution Role Lambda
+Buat IAM Role untuk Lambda dengan policy berikut:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3BackupAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::fortinet-api",
+        "arn:aws:s3:::fortinet-api/*"
+      ]
+    },
+    {
+      "Sid": "SecretsManagerAccess",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:*:*:secret:prod/fortinet/credentials*"
+    }
+  ]
+}
+```
+*(Tambahkan policy AWS bawaan: `AWSLambdaVPCAccessExecutionRole` jika Lambda berada di dalam VPC).*
+
+### B. Konfigurasi AWS Secrets Manager
+Simpan kredensial rahasia perangkat Anda di AWS Secrets Manager dengan nama `prod/fortinet/credentials`:
+```json
+{
+  "FGT_NODE1_TOKEN": "token_api_fortigate_node1",
+  "FGT_NODE2_TOKEN": "token_api_fortigate_node2",
+  "FWB_NODE1_USER": "admin",
+  "FWB_NODE1_PASS": "password_admin_fortiweb_node1",
+  "FWB_NODE2_USER": "admin",
+  "FWB_NODE2_PASS": "password_admin_fortiweb_node2"
+}
+```
+
+### C. Konfigurasi Function di AWS Lambda Console
+1. **Runtime**: Python 3.11 atau 3.12.
+2. **Handler**: `lambda_function.lambda_handler`.
+3. **Memory & Timeout**:
+   * Memory: **512 MB – 1024 MB** (memberikan CPU cukup untuk kompresi ZIP & hash).
+   * Timeout: **3 – 5 menit**.
+4. **VPC Configuration**:
+   * Pasang Lambda pada **VPC dan Private Subnet** yang memiliki rute jaringan ke IP Dedicated Management FortiGate & FortiWeb Anda.
+   * Pastikan Security Group Lambda mengizinkan *Outbound HTTPS (port 443)* ke perangkat serta ke S3 (via S3 Gateway Endpoint) dan Secrets Manager (via Interface Endpoint / NAT).
+5. **Environment Variables**:
+   * `S3_BUCKET_NAME`: `fortinet-api`
+   * `AWS_SECRET_NAME`: `prod/fortinet/credentials`
+   * `SMTP_HOST`: `192.168.3.10`
+   * `SMTP_PORT`: `25`
+   * `SMTP_FROM`: `backup.api@domain.com`
+   * `SMTP_TO`: `netops@domain.com`
+
+### D. Packaging & Upload Zip ke Lambda
+Jalankan di PowerShell untuk membuat deployment package:
+```powershell
+# 1. Install dependencies ke folder package
+pip install -r requirements.txt -t package/
+
+# 2. Salin kode aplikasi ke dalam package
+Copy-Item -Recurse src package/
+Copy-Item -Recurse config package/
+Copy-Item lambda_function.py package/
+
+# 3. Compress menjadi zip untuk diupload ke AWS Lambda
+Compress-Archive -Path package/* -DestinationPath lambda_fortinet_backup.zip -Force
+```
+Upload file `lambda_fortinet_backup.zip` ke AWS Lambda Function Anda.
+
+### E. Trigger Otomatis via Amazon EventBridge
+Buat **EventBridge Rule** dengan Schedule Expression:
+```text
+cron(0 */6 * * ? *)
+```
+Pilih target ke fungsi Lambda Anda. Backup akan berjalan otomatis setiap 6 jam secara serverless!
+

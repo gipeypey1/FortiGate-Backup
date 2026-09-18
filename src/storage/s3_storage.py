@@ -97,11 +97,15 @@ class S3StorageManager:
         client_kwargs = {
             "service_name": "s3",
             "region_name": self.region,
-            "aws_access_key_id": config.get("access_key"),
-            "aws_secret_access_key": config.get("secret_key"),
             "verify": self.verify_ssl,
             "config": boto_cfg
         }
+
+        # If access_key and secret_key are provided, use static credentials.
+        # Otherwise, Boto3 automatically assumes IAM Role (AWS Lambda / EC2 Instance Profile).
+        if config.get("access_key") and config.get("secret_key"):
+            client_kwargs["aws_access_key_id"] = config["access_key"]
+            client_kwargs["aws_secret_access_key"] = config["secret_key"]
 
         if self.endpoint_url:
             client_kwargs["endpoint_url"] = self.endpoint_url
@@ -118,6 +122,45 @@ class S3StorageManager:
             raise StorageError(f"S3 Connection Error for bucket '{self.bucket}': [{error_code}] {e}")
         except Exception as e:
             raise StorageError(f"S3 Connection failed: {e}")
+
+    def get_latest_backup(self, device_name: str) -> Optional[Tuple[str, bytes]]:
+        """
+        Retrieves the most recent backup directly from S3 for stateless / Lambda environments.
+        Lists objects under prefix {device_name}/, sorts by LastModified, and downloads raw bytes.
+        Returns (object_key, content_bytes) or None if no prior backup exists.
+        """
+        try:
+            prefix = f"{device_name}/"
+            paginator = self.client.get_paginator("list_objects_v2")
+            objects = []
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+                if "Contents" in page:
+                    objects.extend(page["Contents"])
+
+            if not objects:
+                return None
+
+            # Filter valid backup extensions (.conf or .zip)
+            valid_objects = [
+                obj for obj in objects
+                if obj["Key"].endswith(".conf") or obj["Key"].endswith(".zip")
+            ]
+            if not valid_objects:
+                return None
+
+            # Sort by LastModified descending
+            latest_obj = max(valid_objects, key=lambda x: x["LastModified"])
+            key = latest_obj["Key"]
+            resp = self.client.get_object(Bucket=self.bucket, Key=key)
+            content_bytes = resp["Body"].read()
+            return key, content_bytes
+        except ClientError as ce:
+            error_code = ce.response.get("Error", {}).get("Code", "")
+            if error_code in ("NoSuchKey", "404"):
+                return None
+            raise StorageError(f"Failed to fetch previous backup from S3 for '{device_name}': {ce}")
+        except Exception as e:
+            raise StorageError(f"Failed to fetch previous backup from S3 for '{device_name}': {e}")
 
     def upload_backup(
         self,

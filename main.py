@@ -24,6 +24,7 @@ from src.config_loader import (
     get_smtp_config,
     ConfigError
 )
+from src.secrets_manager import load_aws_secrets
 from src.logger import setup_logger
 from src.drift import calculate_sha256, analyze_drift
 from src.devices import FortiGateDevice, FortiWebDevice, DeviceError, TruncatedBackupError
@@ -128,8 +129,18 @@ def process_device(
     config_text = client.extract_text_for_drift(config_bytes)
     logger.info(f"[{dev_name}] Backup downloaded successfully: {filename} ({len(config_bytes):,} bytes, SHA-256: {sha256_hash[:16]}...)")
 
-    # 4. Drift Detection against previous local backup
+    # 4. Drift Detection against previous local backup (or directly from S3 if local empty)
     prev_backup = local_storage.get_latest_backup(dev_name)
+    if not prev_backup and s3_manager:
+        try:
+            s3_prev = s3_manager.get_latest_backup(dev_name)
+            if s3_prev:
+                s3_key, s3_bytes = s3_prev
+                prev_backup = (Path(s3_key), s3_bytes)
+                logger.info(f"[{dev_name}] Retrieved previous baseline backup from S3: {s3_key}")
+        except Exception as se:
+            logger.warning(f"[{dev_name}] Could not retrieve previous backup from S3: {se}")
+
     s3_key = None
     drift_status = "INITIAL_BACKUP"
 
@@ -218,9 +229,10 @@ def main():
     print(" Fortinet Automated Backup & Drift Detection Engine")
     print("=" * 70)
 
-    # 1. Load Environment (.env)
+    # 1. Load Environment (.env) and AWS Secrets Manager (if configured)
     try:
         load_environment(args.env)
+        load_aws_secrets()
     except Exception as e:
         logger.error(f"Failed to load environment: {e}")
         sys.exit(1)
