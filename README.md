@@ -85,22 +85,7 @@ Tool otomatisasi backup tingkat produksi (*production-grade*) berbasis Python un
 ## 4. Panduan Konfigurasi Perangkat (Fortinet)
 
 ### A. FortiGate (FortiOS)
-1. **Dedicated Management Interface untuk HA**:
-   ```cli
-   config system ha
-       set ha-direct enable
-   end
-
-   config system interface
-       edit "mgmt"
-           set ip 192.168.2.1 255.255.255.0
-           set allowaccess https ping ssh
-           set dedicated-to management
-       next
-   end
-   ```
-
-2. **Admin Profile & API User**:
+1. **Admin Profile & API User**:
    ```cli
    config system accprofile
        edit "backup_profile"
@@ -207,10 +192,10 @@ devices:
 ```ini
 # S3 Storage (NetApp S3 atau AWS S3)
 # Kosongkan S3_ENDPOINT_URL jika menggunakan AWS S3 resmi
-S3_ENDPOINT_URL=https://netapp-s3.bercalab.my.id
+S3_ENDPOINT_URL=https://s3.domainmu.com
 S3_BUCKET_NAME=fortinet-api
-S3_ACCESS_KEY=KGWIU201QAXQC0SCNBK8
-S3_SECRET_KEY=sDdkP10zdqTQk_2S_cxI6NnLEt8A70tnq33rNz3Q
+S3_ACCESS_KEY=s3_access_key
+S3_SECRET_KEY=s3_secret_key
 S3_VERIFY_SSL=false
 
 # FortiGate Tokens
@@ -225,7 +210,7 @@ SMTP_HOST=192.168.3.10
 SMTP_PORT=25
 SMTP_USE_TLS=false
 SMTP_USE_SSL=false
-SMTP_FROM=backup.api@bercalab.my.id
+SMTP_FROM=backup.api@domainmu.com
 SMTP_TO=netops@perusahaan.com,security@perusahaan.com
 ```
 
