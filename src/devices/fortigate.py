@@ -1,8 +1,4 @@
-"""
-FortiGate REST API Client.
-Pulls running configuration from /api/v2/monitor/system/config/backup.
-"""
-
+import time
 from typing import Dict, Any
 import requests
 from .base import BaseFortinetDevice, DeviceError
@@ -32,15 +28,24 @@ class FortiGateDevice(BaseFortinetDevice):
         }
 
         try:
-            # FortiOS <= 7.2 uses GET, while FortiOS >= 7.4 (and 7.6) requires POST
-            response = self.session.get(
+            # Modern FortiOS (>= 7.4/7.6) requires POST. Older FortiOS (7.0/7.2) uses GET.
+            response = self.session.post(
                 url,
                 params=params,
                 headers=headers,
                 timeout=self.timeout_seconds
             )
             if response.status_code == 405:
-                # Fallback to POST for FortiOS 7.4+ / 7.6+
+                # Fallback to GET for older FortiOS versions
+                response = self.session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=self.timeout_seconds
+                )
+            elif response.status_code == 429:
+                # Rate limit hit: wait 5 seconds and retry once
+                time.sleep(5)
                 response = self.session.post(
                     url,
                     params=params,

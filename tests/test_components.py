@@ -151,7 +151,51 @@ class TestFortinetBackup(unittest.TestCase):
         self.assertFalse(clean_token.startswith("Bearer"))
         self.assertEqual(clean_token, "eyJ1c2VybmFtZSI6ImFkbWluIiwicGFzc3dvcmQiOiJmb3J0aW5ldCIsInZkb20iOiJyb290In0=")
 
+    def test_fortiweb_zip_naming_and_extraction(self):
+        """Tests FortiWeb backup ZIP filename convention and smart text extraction."""
+        import io
+        import zipfile
+        from src.devices.fortiweb import FortiWebDevice
+
+        fwb = FortiWebDevice({
+            "name": "FWB-AM62-HO",
+            "host": "10.0.0.2",
+            "username": "admin",
+            "password": "pwd"
+        })
+
+        # Test filename convention: FWB-AM62-HO_20260918144020_system.conf.zip
+        fname = fwb.get_filename("20260918T144020Z", "d6ad5c76f590")
+        self.assertEqual(fname, "FWB-AM62-HO_20260918144020_system.conf.zip")
+
+        # Create mock FortiWeb ZIP with fwb_system.conf
+        mock_conf = (
+            "[header]\n"
+            "file_split=-------FV-VMB-7.66-------2026-09-18 14:40:20-------FF7C23--------- \n"
+            "[/header]\n"
+            "config server-policy policy\n"
+            "    edit \"P-CR\"\n"
+            "        set ssl enable\n"
+            "    next\n"
+            "end\n"
+            "[file]\n"
+            "name=/tmp/extend_tar_file\n"
+            "BINARY_TAR_DATA_SHOULD_BE_IGNORED\n"
+        ).encode("utf-8")
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("fwb_system.conf", mock_conf)
+        zip_bytes = buf.getvalue()
+
+        # Test smart text extraction
+        extracted = fwb.extract_text_for_drift(zip_bytes)
+        self.assertIn("edit \"P-CR\"", extracted)
+        self.assertNotIn("BINARY_TAR_DATA_SHOULD_BE_IGNORED", extracted)
+        self.assertNotIn("file_split=-------", extracted)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

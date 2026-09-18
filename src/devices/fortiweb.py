@@ -1,5 +1,8 @@
 import base64
+import io
 import json
+import re
+import zipfile
 from typing import Dict, Any
 import requests
 from .base import BaseFortinetDevice, DeviceError
@@ -15,6 +18,47 @@ class FortiWebDevice(BaseFortinetDevice):
         self.user_env = config.get("user_env", "")
         self.pass_env = config.get("pass_env", "")
         self.vdom = config.get("vdom", "root")
+        # ml_backup: "1" to include Machine Learning data, "0" to exclude
+        self.ml_backup = str(config.get("ml_backup", "1")).strip()
+
+    def get_filename(self, timestamp_str: str, sha256_hash: str) -> str:
+        """
+        Returns filename matching FortiWeb backup standard:
+        e.g. FWB-AM62-HO_20260918144020_system.conf.zip
+        """
+        compact_ts = timestamp_str.replace("T", "").replace("Z", "")
+        return f"{self.name}_{compact_ts}_system.conf.zip"
+
+    def extract_text_for_drift(self, data: bytes) -> str:
+        """
+        Extracts clean CLI configuration text from FortiWeb ZIP backup.
+        FortiWeb zip contains fwb_system.conf which bundles:
+        1. Configuration text (sys_global.conf, sys_domain.root.conf)
+        2. Binary machine learning archive (/tmp/extend_tar_file)
+        3. Dynamic export timestamps (-------<version>-------<timestamp>-------)
+
+        This method extracts only the human-readable configuration text before
+        the binary tar archive and removes dynamic timestamp lines to enable
+        accurate, ultra-fast drift detection without false positive noise.
+        """
+        if data.startswith(b"PK\x03\x04"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(data)) as z:
+                    if "fwb_system.conf" in z.namelist():
+                        raw = z.read("fwb_system.conf")
+                        # Truncate binary tar extended files (machine learning db / blobs)
+                        pos = raw.find(b"name=/tmp/extend_tar_file")
+                        if pos != -1:
+                            raw = raw[:pos]
+                        text = raw.decode("utf-8", errors="replace")
+                        # Filter dynamic header split lines:
+                        # e.g. -------FV-VMB-7.66-FW-build1097-251031-------2026-09-14 15:50:13-------...
+                        pat = re.compile(r'^(file_split=)?-------.*-------.*-------.*---------')
+                        clean_lines = [l for l in text.splitlines() if not pat.match(l)]
+                        return "\n".join(clean_lines)
+            except Exception:
+                pass
+        return super().extract_text_for_drift(data)
 
     def _get_auth_header_value(self) -> str:
         """
@@ -47,12 +91,15 @@ class FortiWebDevice(BaseFortinetDevice):
     def pull_config(self) -> bytes:
         """
         Pulls running config from FortiWeb REST API.
-        Endpoint: /api/v2.0/system/maintenance.backupconfiguration?type=entire
+        Endpoint: /api/v2.0/system/maintenance.backupconfiguration?type=entire&ml_backup=1
         """
         auth_token = self._get_auth_header_value()
 
         url = f"{self.base_url}/api/v2.0/system/maintenance.backupconfiguration"
-        params = {"type": "entire"}
+        params = {
+            "type": "entire",
+            "ml_backup": self.ml_backup
+        }
 
         # FortiWeb REST API uses raw Base64 token directly in Authorization header
         headers = {

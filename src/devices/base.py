@@ -58,16 +58,28 @@ class BaseFortinetDevice(ABC):
                 f"Check API Admin permissions (System must be Read/Write, other categories at least Read)."
             )
 
-        # Validate line count
+        # Validate line count based on extracted text configuration
         try:
-            line_count = len(data.decode("utf-8", errors="replace").splitlines())
+            text = self.extract_text_for_drift(data)
+            line_count = len(text.splitlines())
             if line_count < self.min_lines:
                 raise TruncatedBackupError(
                     f"[{self.name}] Potential Silent Truncation! Backup line count ({line_count} lines) "
                     f"is below the minimum baseline threshold ({self.min_lines} lines)."
                 )
+        except TruncatedBackupError:
+            raise
         except Exception:
             pass
+
+    def get_filename(self, timestamp_str: str, sha256_hash: str) -> str:
+        """Returns the formatted backup filename for this device."""
+        compact_ts = timestamp_str.replace("T", "").replace("Z", "")
+        return f"{self.name}_{compact_ts}_{sha256_hash[:12]}.conf"
+
+    def extract_text_for_drift(self, data: bytes) -> str:
+        """Extracts configuration text suitable for line-by-line drift analysis."""
+        return data.decode("utf-8", errors="replace")
 
     @abstractmethod
     def pull_config(self) -> bytes:

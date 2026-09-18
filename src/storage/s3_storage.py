@@ -28,21 +28,26 @@ class LocalStorageManager:
         device_dir.mkdir(parents=True, exist_ok=True)
         return device_dir
 
-    def get_latest_backup(self, device_name: str) -> Optional[Tuple[Path, str]]:
+    def get_latest_backup(self, device_name: str) -> Optional[Tuple[Path, bytes]]:
         """
-        Retrieves the path and content of the most recent local backup for a device.
-        Returns (filepath, content_str) or None if no prior backup exists.
+        Retrieves the path and raw bytes of the most recent local backup for a device.
+        Supports both .conf and .zip backup archives.
+        Returns (filepath, content_bytes) or None if no prior backup exists.
         """
         device_dir = self.get_device_dir(device_name)
-        backup_files = sorted(device_dir.glob("*.conf"), key=lambda f: f.stat().st_mtime, reverse=True)
+        backup_files = sorted(
+            [f for f in device_dir.iterdir() if f.is_file() and (f.suffix in (".conf", ".zip") or f.name.endswith(".conf.zip"))],
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
 
         if not backup_files:
             return None
 
         latest_file = backup_files[0]
         try:
-            content = latest_file.read_text(encoding="utf-8", errors="replace")
-            return latest_file, content
+            content_bytes = latest_file.read_bytes()
+            return latest_file, content_bytes
         except Exception as e:
             raise StorageError(f"Failed to read local backup {latest_file}: {e}")
 
@@ -50,12 +55,10 @@ class LocalStorageManager:
         self,
         device_name: str,
         config_bytes: bytes,
-        timestamp_str: str,
-        sha256_hash: str
+        filename: str
     ) -> Path:
-        """Saves config bytes locally."""
+        """Saves config bytes locally using specified filename."""
         device_dir = self.get_device_dir(device_name)
-        filename = f"{timestamp_str}_{sha256_hash[:12]}.conf"
         target_path = device_dir / filename
 
         target_path.write_bytes(config_bytes)
@@ -121,14 +124,17 @@ class S3StorageManager:
         device_name: str,
         device_type: str,
         config_bytes: bytes,
+        filename: str,
         timestamp_str: str,
         sha256_hash: str
     ) -> str:
         """
         Uploads backup bytes to S3 with metadata.
-        Key structure: {device_name}/{timestamp}_{sha256[:12]}.conf
+        Key structure: {device_name}/{filename}
         """
-        key = f"{device_name}/{timestamp_str}_{sha256_hash[:12]}.conf"
+        key = f"{device_name}/{filename}"
+        content_type = "application/zip" if filename.endswith(".zip") else "text/plain"
+
         metadata = {
             "sha256": sha256_hash,
             "device": device_name,
@@ -140,7 +146,7 @@ class S3StorageManager:
             "Bucket": self.bucket,
             "Key": key,
             "Body": config_bytes,
-            "ContentType": "text/plain",
+            "ContentType": content_type,
             "Metadata": metadata
         }
 

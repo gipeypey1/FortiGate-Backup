@@ -42,10 +42,11 @@ devices:
     pass_env: "FWB_NODE1_PASS"
     vdom: "root"
     token_env: "FWB_NODE1_TOKEN"
+    ml_backup: "1"             # Include Machine Learning data (Entire backup with ML)
     min_size_bytes: 25000      # Baseline minimal FortiWeb
     min_lines: 300
     verify_ssl: false
-    timeout_seconds: 30
+    timeout_seconds: 60
 
   # - name: "FWB-WAF-02"
   #   description: "FortiWeb WAF - Node 2"
@@ -56,8 +57,9 @@ devices:
   #   pass_env: "FWB_NODE2_PASS"
   #   vdom: "root"
   #   token_env: "FWB_NODE2_TOKEN"
+  #   ml_backup: "1"
   #   min_size_bytes: 25000
   #   min_lines: 300
   #   verify_ssl: false
-  #   timeout_seconds: 30
+  #   timeout_seconds: 60
 

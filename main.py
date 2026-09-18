@@ -122,10 +122,11 @@ def process_device(
                 pass
         return {"device": dev_name, "type": dev_type, "status": "FAILED", "message": err_msg}
 
-    # 3. Calculate SHA-256 fingerprint
+    # 3. Calculate SHA-256 fingerprint and resolve filename
     sha256_hash = calculate_sha256(config_bytes)
-    config_text = config_bytes.decode("utf-8", errors="replace")
-    logger.info(f"[{dev_name}] Backup downloaded successfully. SHA-256: {sha256_hash[:16]}... ({len(config_bytes):,} bytes)")
+    filename = client.get_filename(timestamp, sha256_hash)
+    config_text = client.extract_text_for_drift(config_bytes)
+    logger.info(f"[{dev_name}] Backup downloaded successfully: {filename} ({len(config_bytes):,} bytes, SHA-256: {sha256_hash[:16]}...)")
 
     # 4. Drift Detection against previous local backup
     prev_backup = local_storage.get_latest_backup(dev_name)
@@ -133,7 +134,8 @@ def process_device(
     drift_status = "INITIAL_BACKUP"
 
     if prev_backup:
-        prev_path, prev_text = prev_backup
+        prev_path, prev_bytes = prev_backup
+        prev_text = client.extract_text_for_drift(prev_bytes)
         drift_result = analyze_drift(
             old_content=prev_text,
             new_content=config_text,
@@ -163,7 +165,7 @@ def process_device(
         drift_result = None
 
     # 5. Save local backup copy
-    saved_path = local_storage.save_backup(dev_name, config_bytes, timestamp, sha256_hash)
+    saved_path = local_storage.save_backup(dev_name, config_bytes, filename)
     logger.debug(f"[{dev_name}] Saved local cache to {saved_path}")
 
     # 6. Upload to S3 (if not dry-run)
@@ -173,6 +175,7 @@ def process_device(
                 device_name=dev_name,
                 device_type=dev_type,
                 config_bytes=config_bytes,
+                filename=filename,
                 timestamp_str=timestamp,
                 sha256_hash=sha256_hash
             )
